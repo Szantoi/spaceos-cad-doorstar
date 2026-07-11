@@ -1,0 +1,24 @@
+# Dependencies / build output
+node_modules/
+dist/
+
+# Local environment and secrets (bearer tokens live here)
+.env
+.env.pre-split-backup-*
+config/agents.yaml
+config/agents.yaml.pre-split-backup-*
+
+# Live runtime state (SQLite stores, logs) — not source, changes constantly
+data/
+logs/
+
+# Scratch/dev test files — have contained hardcoded bearer tokens before
+scratch/
+
+# Claude Code local settings (permission-approval history can embed literal
+# command strings, which may contain tokens/secrets typed during a session)
+.claude/settings.local.json
+
+# OS specific
+.DS_Store
+Thumbs.db

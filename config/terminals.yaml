@@ -1,0 +1,253 @@
+# Terminal Configuration
+#
+# Defines system roles, custom terminals, and aliases.
+# Changes are auto-reloaded every 30 seconds (no restart needed).
+#
+# System roles are required for core functionality.
+# Custom terminals can be added freely.
+# Aliases allow calling terminals by different names (e.g., Hungarian names).
+
+version: "1.0"
+updated: "2026-06-23"
+
+# ─── System Roles ─────────────────────────────────────────────────────────────
+# These roles are required for core system functionality.
+# They can have aliases but cannot be removed.
+#
+# Role types:
+#   - coordinator: orchestrates other terminals (root, conductor)
+#   - support: knowledge and research (librarian, explorer, architect)
+#   - reviewer: reviews work output
+#   - worker: executes tasks (custom terminals)
+
+system_roles:
+  root:
+    description: "Strategic decisions, system oversight"
+    type: coordinator
+    priority: true
+    model: opus
+    session: spaceos-root
+    aliases:
+      - sárkány
+      - dragon
+      - admin
+    can_control: "*"  # Can control all terminals
+
+  conductor:
+    description: "Task coordination, pipeline management"
+    type: coordinator
+    priority: true
+    model: sonnet
+    session: spaceos-conductor
+    aliases:
+      - karmester
+      - maestro
+      - orchestrator
+    can_control:
+      - architect
+      - librarian
+      - explorer
+      - monitor
+      - reviewer
+      - "@workers"  # All worker-type terminals
+
+  librarian:
+    description: "Knowledge base maintenance, documentation"
+    type: support
+    priority: false
+    model: sonnet
+    session: spaceos-librarian
+    aliases:
+      - könyvtáros
+      - tudás
+      - knowledge
+    can_control:
+      - librarian  # Only self
+
+  explorer:
+    description: "Codebase research, onboarding"
+    type: support
+    priority: false
+    model: haiku
+    session: spaceos-explorer
+    aliases:
+      - felfedező
+      - kutató
+      - researcher
+    can_control:
+      - explorer  # Only self
+
+  architect:
+    description: "Architecture review, design consultation"
+    type: support
+    priority: false
+    model: sonnet
+    session: spaceos-architect
+    aliases:
+      - tervező
+      - építész
+      - designer-arch
+    can_control:
+      - architect  # Only self
+
+  reviewer:
+    description: "Code review, quality gate"
+    type: reviewer
+    priority: false
+    model: haiku
+    session: spaceos-reviewer
+    aliases:
+      - bíró
+      - judge
+      - critic
+    can_control:
+      - reviewer  # Only self
+
+  monitor:
+    description: "System monitoring, health checks, issue collection"
+    type: support
+    priority: false
+    model: haiku
+    session: spaceos-monitor
+    aliases:
+      - megfigyelő
+      - watcher
+      - healthcheck
+    can_control:
+      - monitor  # Only self
+
+# ─── Custom Terminals ─────────────────────────────────────────────────────────
+# Add your own terminals here. They are automatically registered.
+# Workers can be controlled by root and conductor.
+
+terminals:
+  backend:
+    description: ".NET and Node.js backend development"
+    type: worker
+    model: sonnet
+    session: spaceos-backend
+    directory: /opt/spaceos/terminals/backend
+    aliases:
+      - háttér
+      - server
+      - api
+      # Legacy SpaceOS module aliases
+      - kernel
+      - orch
+      - joinery
+      - cutting
+      - identity
+      - inventory
+      - procurement
+      - sales
+      - abstractions
+      - infra
+      - e2e
+      - nexus
+
+  frontend:
+    description: "React/TypeScript portal development"
+    type: worker
+    model: sonnet
+    session: spaceos-frontend
+    directory: /opt/spaceos/terminals/frontend
+    aliases:
+      - felület
+      - ui
+      - portal
+      - fe
+      - fe2
+
+  designer:
+    description: "UI/UX design, Figma integration"
+    type: worker
+    model: sonnet
+    session: spaceos-designer
+    directory: /opt/spaceos/terminals/designer
+    aliases:
+      - dizájner
+      - ux
+      - graphics
+
+  chat-root:
+    description: "Telegram chat session (shared state with root)"
+    type: support
+    model: haiku
+    session: spaceos-chat-root
+    directory: /opt/spaceos/terminals/chat-root
+    aliases:
+      - chat
+      - telegram
+      - conversation
+    shared_state: root
+    can_control:
+      - chat-root  # Only self
+
+# ─── Terminal Groups ──────────────────────────────────────────────────────────
+# Named groups for permission rules and scheduling
+
+groups:
+  coordinators:
+    - root
+    - conductor
+
+  support:
+    - architect
+    - librarian
+    - explorer
+    - monitor
+    - chat-root
+
+  workers:
+    - backend
+    - frontend
+    - designer
+
+  all_dev:
+    - backend
+    - frontend
+    - designer
+    - architect
+
+# ─── Scheduling Windows ───────────────────────────────────────────────────────
+# Default scheduling preferences (can be overridden in dispatch-control)
+
+scheduling:
+  planning_window:
+    description: "Morning planning session"
+    time: "06:00-08:00"
+    allowed: ["@coordinators", "architect"]
+
+  dev_session_1:
+    description: "Morning development"
+    time: "08:00-12:00"
+    allowed: ["@workers"]
+
+  dev_session_2:
+    description: "Afternoon development"
+    time: "14:00-18:00"
+    allowed: ["@workers"]
+
+  review_window:
+    description: "Evening review"
+    time: "20:00-22:00"
+    allowed: ["@coordinators", "librarian"]
+
+# ─── Token Budgets ────────────────────────────────────────────────────────────
+# Default token limits per terminal (can be overridden in dispatch-control)
+
+token_budgets:
+  root: { daily: 20000, hourly: 5000 }
+  conductor: { daily: 15000, hourly: 3000 }
+  backend: { daily: 10000, hourly: 2000 }
+  frontend: { daily: 10000, hourly: 2000 }
+  architect: { daily: 10000, hourly: 2000 }
+  librarian: { daily: 5000, hourly: 1000 }
+  explorer: { daily: 5000, hourly: 1000 }
+  designer: { daily: 5000, hourly: 1000 }
+  reviewer: { daily: 5000, hourly: 1000 }
+  monitor: { daily: 5000, hourly: 1000 }
+  chat-root: { daily: 3000, hourly: 500 }  # Lightweight chat sessions
+
+  # Default for unlisted terminals
+  _default: { daily: 5000, hourly: 1000 }
