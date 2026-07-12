@@ -20,3 +20,24 @@ export {
   type PropertyDefinition,
   type EndpointDefinition,
 } from './codegenEngine';
+
+// Frontend Verification Tools (MSG-NEXUS-002)
+export {
+  checkApiClientStatus,
+  verifyFrontendBuild,
+  analyzeBundleSize,
+  type CheckApiClientStatusParams,
+  type CheckApiClientStatusResult,
+  type VerifyFrontendBuildParams,
+  type VerifyFrontendBuildResult,
+  type AnalyzeBundleSizeParams,
+  type AnalyzeBundleSizeResult,
+} from './frontendVerify';
+
+// Pattern-Based Scaffolding (MSG-NEXUS-002)
+export {
+  scaffoldFromPattern,
+  listAvailablePatterns,
+  type ScaffoldFromPatternParams,
+  type ScaffoldFromPatternResult,
+} from './patternScaffold';

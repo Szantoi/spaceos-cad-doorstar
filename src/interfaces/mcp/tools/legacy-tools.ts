@@ -105,10 +105,19 @@ import {
   generateModule,
   generateHook,
   getCodegenStatus,
+  // Frontend Verification Tools (MSG-NEXUS-002)
+  checkApiClientStatus,
+  verifyFrontendBuild,
+  analyzeBundleSize,
+  scaffoldFromPattern,
   type GenerateApiClientParams,
   type GenerateComponentParams,
   type GenerateModuleParams,
   type GenerateHookParams,
+  type CheckApiClientStatusParams,
+  type VerifyFrontendBuildParams,
+  type AnalyzeBundleSizeParams,
+  type ScaffoldFromPatternParams,
 } from '../../../codegen/index';
 import {
   selectBestResultWithChat,
@@ -148,6 +157,36 @@ import {
   type GoalStatus,
   type Goal,
 } from '../../../goalStore';
+import {
+  readStatusMd,
+  writeStatusMd,
+  readSessionState,
+  writeSessionState,
+  readTurnCount,
+  incrementTurnCount,
+  resetTurnCount,
+  getContextSaturation,
+  readCheckpointsMd,
+  appendCheckpoint,
+  getContextFilesStatus,
+  getAllContextFilesStatus,
+  buildSessionStartContext,
+} from '../../../contextPersistence';
+import {
+  getMemoryHealthReport,
+  compressMemory,
+  extractPatterns,
+  type CompressMemoryParams,
+  type ExtractPatternsParams,
+} from '../../../memoryTools';
+import {
+  getEpicProgress,
+  getAllEpicsProgress,
+} from '../../../pipeline/epicProgressTracker';
+import { getTerminalStatusAggregate } from '../../../pipeline/terminalStatusAggregator';
+import { resolveDependencies } from '../../../pipeline/dependencyResolver';
+import { transferSessionContext } from '../../../pipeline/sessionContextTransfer';
+import { matchDomainPattern } from '../../../pipeline/domainPatternMatcher';
 
 const router = Router();
 
@@ -1802,6 +1841,500 @@ const TOOLS = [
     },
   },
 
+
+  // Context Persistence tools (Goal Drift Prevention)
+  {
+    name: 'read_terminal_status_md',
+    description: 'Read STATUS.md for a terminal - current state snapshot for goal re-anchoring.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+      },
+      required: ['terminal'],
+    },
+  },
+  {
+    name: 'write_terminal_status_md',
+    description: 'Update STATUS.md for a terminal - record current state, focus, and progress.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+        system_status: {
+          type: 'string',
+          enum: ['operational', 'in_progress', 'paused', 'blocked'],
+          description: 'Current system status',
+        },
+        current_focus: {
+          type: 'string',
+          description: 'Active task (e.g., MSG-BACKEND-045)',
+        },
+        recent_actions: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of recent actions taken',
+        },
+        next_steps: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of planned next steps',
+        },
+      },
+      required: ['terminal', 'system_status'],
+    },
+  },
+  {
+    name: 'read_session_state',
+    description: 'Read .session-state.json for a terminal - cross-session goal recovery.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+      },
+      required: ['terminal'],
+    },
+  },
+  {
+    name: 'write_session_state',
+    description: 'Update .session-state.json for a terminal - persist epic, progress, and checkpoint state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+        epic_id: {
+          type: 'string',
+          description: 'Epic ID (e.g., EPIC-CUTTING-Q3)',
+        },
+        epic_name: {
+          type: 'string',
+          description: 'Human-readable epic name',
+        },
+        epic_progress: {
+          type: 'number',
+          description: 'Progress percentage (0-100)',
+        },
+        next_checkpoint_id: {
+          type: 'string',
+          description: 'Next checkpoint ID',
+        },
+        next_checkpoint_name: {
+          type: 'string',
+          description: 'Next checkpoint name',
+        },
+        completed_checkpoints: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of completed checkpoint IDs',
+        },
+        last_active_task: {
+          type: 'string',
+          description: 'Last active task ID',
+        },
+      },
+      required: ['terminal'],
+    },
+  },
+  {
+    name: 'get_context_saturation',
+    description: 'Get context saturation status for a terminal. Returns turn count and warning levels (ok/warning/critical).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+      },
+      required: ['terminal'],
+    },
+  },
+  {
+    name: 'increment_turn_count',
+    description: 'Increment .turn-count for a terminal. Used by Nightwatch for context saturation tracking.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+        amount: {
+          type: 'number',
+          description: 'Amount to increment (default: 1)',
+        },
+      },
+      required: ['terminal'],
+    },
+  },
+  {
+    name: 'reset_turn_count',
+    description: 'Reset .turn-count to 0 for a terminal. Use after session restart or re-anchoring.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+      },
+      required: ['terminal'],
+    },
+  },
+  {
+    name: 'read_checkpoints_md',
+    description: 'Read CHECKPOINTS.md for a terminal - milestone tracking and strategic decision points.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+      },
+      required: ['terminal'],
+    },
+  },
+  {
+    name: 'append_checkpoint_to_md',
+    description: 'Append a new checkpoint to CHECKPOINTS.md for a terminal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+        date: {
+          type: 'string',
+          description: 'Checkpoint date (YYYY-MM-DD)',
+        },
+        name: {
+          type: 'string',
+          description: 'Checkpoint name',
+        },
+        decision: {
+          type: 'string',
+          description: 'Decision type (e.g., GO/NO-GO)',
+        },
+        evaluation_criteria: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Evaluation criteria list',
+        },
+        go_actions: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Actions if GO decision',
+        },
+        no_go_actions: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Actions if NO-GO decision',
+        },
+        refs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Reference links',
+        },
+      },
+      required: ['terminal', 'date', 'name', 'decision', 'evaluation_criteria', 'go_actions', 'no_go_actions'],
+    },
+  },
+  {
+    name: 'get_context_files_status',
+    description: 'Get status of all context persistence files for a terminal (STATUS.md, .session-state.json, .turn-count, CHECKPOINTS.md).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+      },
+      required: ['terminal'],
+    },
+  },
+  {
+    name: 'get_all_context_files_status',
+    description: 'Get context persistence files status for ALL terminals. Overview of goal persistence readiness.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'build_session_start_context',
+    description: 'Build goal re-anchoring context for session start. Combines session state, context saturation, and STATUS.md.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+      },
+      required: ['terminal'],
+    },
+  },
+
+
+  // ─── Frontend Verification Tools (MSG-NEXUS-002) ──────────────────────────────
+
+  {
+    name: 'check_api_client_status',
+    description: 'Check Orval-generated API client status for a JoineryTech module. Verifies OpenAPI spec, Orval config, generated client, and detects manual hooks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        module: {
+          type: 'string',
+          description: 'JoineryTech module name (e.g., "ehs", "crm", "maintenance")',
+        },
+      },
+      required: ['module'],
+    },
+  },
+  {
+    name: 'verify_frontend_build',
+    description: 'Verify frontend build status. Runs TypeScript check, estimates build time, and reports bundle size.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: {
+          type: 'string',
+          description: 'Project path relative to SPACEOS_ROOT (e.g., "datahaven-web/client")',
+        },
+        run_tests: {
+          type: 'boolean',
+          description: 'Run tests as part of verification (default: false)',
+        },
+      },
+      required: ['project'],
+    },
+  },
+  {
+    name: 'scaffold_from_pattern',
+    description: 'Scaffold component from documented UI pattern. Available patterns: dashboard-with-kpi-strip, data-table-with-actions, form-wizard-offline-first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'Pattern name (e.g., "dashboard-with-kpi-strip")',
+        },
+        module: {
+          type: 'string',
+          description: 'JoineryTech module (e.g., "safety", "ehs")',
+        },
+        entity: {
+          type: 'string',
+          description: 'Entity name (e.g., "Audit", "Incident")',
+        },
+      },
+      required: ['pattern', 'module', 'entity'],
+    },
+  },
+  {
+    name: 'analyze_bundle_size',
+    description: 'Analyze bundle size and provide optimization recommendations. Identifies lazy loading candidates and large chunks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: {
+          type: 'string',
+          description: 'Project path relative to SPACEOS_ROOT (e.g., "datahaven-web/client")',
+        },
+      },
+      required: ['project'],
+    },
+  },
+
+  // Phase 1 MCP Tools (ADR-050.Phase1)
+  {
+    name: 'get_terminal_status_aggregate',
+    description: 'Get aggregated status from all 7 terminals. Shows working/idle/stuck states, context saturation, health scores, and alerts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        format: {
+          type: 'string',
+          enum: ['summary', 'detailed', 'alerts_only'],
+          description: 'Output format (default: summary)',
+        },
+      },
+    },
+  },
+  {
+    name: 'resolve_epic_dependencies',
+    description: 'Resolve epic dependencies from EPICS.yaml. Identifies blockers, ready tasks, and validates dependency graph.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        epic_id: {
+          type: 'string',
+          description: 'Epic ID (e.g., "EPIC-CUTTING-Q3")',
+        },
+        check_blockers: {
+          type: 'boolean',
+          description: 'Validate blocker resolution (default: true)',
+        },
+      },
+      required: ['epic_id'],
+    },
+  },
+  {
+    name: 'transfer_session_context',
+    description: 'Transfer context between terminals via inbox messages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from_terminal: {
+          type: 'string',
+          description: 'Source terminal (root, conductor, architect, librarian, explorer, backend, frontend, designer)',
+        },
+        to_terminal: {
+          type: 'string',
+          description: 'Target terminal',
+        },
+        context_type: {
+          type: 'string',
+          enum: ['research_summary', 'code_audit', 'knowledge_synthesis'],
+          description: 'Context transfer type',
+        },
+        summary: {
+          type: 'string',
+          description: 'Context summary (optional)',
+        },
+        include_files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Files to reference (max 20)',
+        },
+      },
+      required: ['from_terminal', 'to_terminal', 'context_type'],
+    },
+  },
+  {
+    name: 'match_domain_pattern',
+    description: 'Match description to known domain patterns with confidence scores and recommendations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        description: {
+          type: 'string',
+          description: 'Problem/feature description (max 500 chars)',
+        },
+        domain: {
+          type: 'string',
+          enum: ['crm', 'controlling', 'procurement', 'ehs', 'cutting', 'joinery', 'kernel', 'general'],
+          description: 'Filter by domain (optional)',
+        },
+      },
+      required: ['description'],
+    },
+  },
+
+  // Memory Management tools (MSG-BACKEND-192)
+  {
+    name: 'memory_health_report',
+    description: 'Get fleet-wide memory health status in one call. Returns size, staleness, duplicate ratio, and suggested actions for all terminals.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'compress_memory',
+    description: 'Automatic memory compression with pattern detection. Supports dry_run mode for safe preview.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name: ${TERMINALS.join(', ')}`,
+        },
+        strategy: {
+          type: 'string',
+          enum: ['aggressive', 'moderate', 'conservative'],
+          description: 'Compression level: aggressive (remove most), moderate (balanced), conservative (minimal)',
+        },
+        preserve_sections: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Section headers to preserve (optional)',
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'Preview compression without writing (default: true)',
+        },
+      },
+      required: ['terminal', 'strategy'],
+    },
+  },
+  {
+    name: 'extract_patterns',
+    description: 'Cross-terminal pattern mining for knowledge extraction. Finds repeating workflows, decisions, and error resolutions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: {
+          type: 'string',
+          description: `Terminal name or 'all' for fleet-wide: ${TERMINALS.join(', ')}, all`,
+        },
+        min_frequency: {
+          type: 'number',
+          description: 'Minimum pattern frequency (default: 3)',
+        },
+        pattern_types: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['workflow', 'decision', 'error_resolution'],
+          },
+          description: 'Pattern types to extract',
+        },
+      },
+      required: ['terminal', 'pattern_types'],
+    },
+  },
+
+  // Epic Progress Tracker (MSG-NEXUS-005)
+  {
+    name: 'get_epic_progress',
+    description: 'Get real-time epic progress with task completion, blockers, and estimated completion date.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        epic_id: {
+          type: 'string',
+          description: 'Epic ID (e.g., EPIC-CUTTING-Q3, EPIC-JOINERY-V2)',
+        },
+      },
+      required: ['epic_id'],
+    },
+  },
+  {
+    name: 'get_all_epics_progress',
+    description: 'Get progress for all epics in EPICS.yaml',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
   // Subscription tools (ADR-052)
   ...SUBSCRIPTION_TOOLS,
 ];
@@ -3880,6 +4413,634 @@ Requested by ${callerTerminal || 'unknown'} chat session.
         };
       }
 
+
+      // Context Persistence tools (Goal Drift Prevention)
+      case 'read_terminal_status_md': {
+        const terminal = String(args.terminal || '');
+        try {
+          const status = await readStatusMd(terminal);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  exists: status !== null,
+                  ...(status || { terminal, note: 'STATUS.md not found for this terminal' }),
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'write_terminal_status_md': {
+        const terminal = String(args.terminal || '');
+        const systemStatus = args.system_status as 'operational' | 'in_progress' | 'paused' | 'blocked';
+        const currentFocus = args.current_focus ? String(args.current_focus) : undefined;
+        const recentActions = args.recent_actions as string[] | undefined;
+        const nextSteps = args.next_steps as string[] | undefined;
+
+        try {
+          const result = await writeStatusMd(terminal, {
+            systemStatus,
+            currentFocus,
+            recentActions,
+            nextSteps,
+          });
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  terminal,
+                  path: result.path,
+                  message: `STATUS.md updated for ${terminal}`,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'read_session_state': {
+        const terminal = String(args.terminal || '');
+        try {
+          const state = await readSessionState(terminal);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  terminal,
+                  exists: state !== null,
+                  sessionState: state,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'write_session_state': {
+        const terminal = String(args.terminal || '');
+        try {
+          const result = await writeSessionState(terminal, {
+            epicId: args.epic_id ? String(args.epic_id) : undefined,
+            epicName: args.epic_name ? String(args.epic_name) : undefined,
+            epicProgress: args.epic_progress !== undefined ? Number(args.epic_progress) : undefined,
+            nextCheckpointId: args.next_checkpoint_id ? String(args.next_checkpoint_id) : undefined,
+            nextCheckpointName: args.next_checkpoint_name ? String(args.next_checkpoint_name) : undefined,
+            completedCheckpoints: args.completed_checkpoints as string[] | undefined,
+            lastActiveTask: args.last_active_task ? String(args.last_active_task) : undefined,
+          });
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  terminal,
+                  path: result.path,
+                  message: `.session-state.json updated for ${terminal}`,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'get_context_saturation': {
+        const terminal = String(args.terminal || '');
+        try {
+          const saturation = await getContextSaturation(terminal);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  ...saturation,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'increment_turn_count': {
+        const terminal = String(args.terminal || '');
+        const amount = args.amount !== undefined ? Number(args.amount) : 1;
+        try {
+          const result = await incrementTurnCount(terminal, amount);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  terminal,
+                  count: result.count,
+                  warning: result.warning,
+                  critical: result.critical,
+                  needsReanchor: result.needsReanchor,
+                  message: result.critical
+                    ? `CRITICAL: Turn count ${result.count} exceeds 50. Consider re-anchoring.`
+                    : result.warning
+                      ? `WARNING: Turn count ${result.count} exceeds 30. Context saturation approaching.`
+                      : `Turn count incremented to ${result.count}.`,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'reset_turn_count': {
+        const terminal = String(args.terminal || '');
+        try {
+          const result = await resetTurnCount(terminal);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  terminal,
+                  path: result.path,
+                  message: `Turn count reset to 0 for ${terminal}.`,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'read_checkpoints_md': {
+        const terminal = String(args.terminal || '');
+        try {
+          const checkpoints = await readCheckpointsMd(terminal);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  exists: checkpoints !== null,
+                  ...(checkpoints || { terminal, note: 'CHECKPOINTS.md not found for this terminal' }),
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'append_checkpoint_to_md': {
+        const terminal = String(args.terminal || '');
+        try {
+          const result = await appendCheckpoint(terminal, {
+            date: String(args.date || ''),
+            name: String(args.name || ''),
+            decision: String(args.decision || ''),
+            evaluationCriteria: args.evaluation_criteria as string[],
+            goActions: args.go_actions as string[],
+            noGoActions: args.no_go_actions as string[],
+            refs: args.refs as string[] | undefined,
+          });
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  terminal,
+                  path: result.path,
+                  message: `Checkpoint added to CHECKPOINTS.md for ${terminal}.`,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'get_context_files_status': {
+        const terminal = String(args.terminal || '');
+        try {
+          const status = await getContextFilesStatus(terminal);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  ...status,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'get_all_context_files_status': {
+        try {
+          const statuses = await getAllContextFilesStatus();
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  terminals: statuses,
+                  count: statuses.length,
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      case 'build_session_start_context': {
+        const terminal = String(args.terminal || '');
+        try {
+          const context = await buildSessionStartContext(terminal);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  terminal,
+                  context,
+                  note: 'Use this context for goal re-anchoring at session start.',
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: String(err) }, null, 2) }],
+          };
+        }
+      }
+
+      // Frontend Verification Tools (MSG-NEXUS-002)
+      case 'check_api_client_status': {
+        try {
+          const params: CheckApiClientStatusParams = {
+            module: String(args.module),
+          };
+          const result = await checkApiClientStatus(params);
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          console.error('[MCP] check_api_client_status error:', error);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ success: false, error: String(error) }),
+              },
+            ],
+          };
+        }
+      }
+
+      case 'verify_frontend_build': {
+        try {
+          const params: VerifyFrontendBuildParams = {
+            project: String(args.project),
+            run_tests: Boolean(args.run_tests || false),
+          };
+          const result = await verifyFrontendBuild(params);
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          console.error('[MCP] verify_frontend_build error:', error);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  typescript_errors: 999,
+                  build_time_estimate: 'unknown',
+                  bundle_size_mb: 0,
+                  chunk_warnings: [String(error)],
+                  buildable: false,
+                }),
+              },
+            ],
+          };
+        }
+      }
+
+      case 'scaffold_from_pattern': {
+        try {
+          const params: ScaffoldFromPatternParams = {
+            pattern: String(args.pattern),
+            module: String(args.module),
+            entity: String(args.entity),
+          };
+          const result = await scaffoldFromPattern(params);
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          console.error('[MCP] scaffold_from_pattern error:', error);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: false,
+                  filesCreated: [],
+                  componentPath: '',
+                  error: String(error),
+                }),
+              },
+            ],
+          };
+        }
+      }
+
+      case 'analyze_bundle_size': {
+        try {
+          const params: AnalyzeBundleSizeParams = {
+            project: String(args.project),
+          };
+          const result = await analyzeBundleSize(params);
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          console.error('[MCP] analyze_bundle_size error:', error);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  total_size_mb: 0,
+                  gzip_size_mb: 0,
+                  top_chunks: [],
+                  lazy_loading_candidates: [],
+                  recommendations: [String(error)],
+                }),
+              },
+            ],
+          };
+        }
+      }
+
+
+      // Phase 1 MCP Tools (MSG-BACKEND-173)
+      case 'get_terminal_status_aggregate': {
+        const format = (args.format as 'summary' | 'detailed' | 'alerts_only') || 'summary';
+        const result = await getTerminalStatusAggregate(format);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'resolve_epic_dependencies': {
+        const epicId = String(args.epic_id || '');
+        const checkBlockers = (args.check_blockers as boolean) !== false;
+        if (!epicId) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ error: 'epic_id is required' }),
+              },
+            ],
+          };
+        }
+        const result = await resolveDependencies(epicId, checkBlockers);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'transfer_session_context': {
+        const fromTerminal = String(args.from_terminal || '');
+        const toTerminal = String(args.to_terminal || '');
+        const contextType = args.context_type as 'research_summary' | 'code_audit' | 'knowledge_synthesis';
+        const summary = String(args.summary || '');
+        const includeFiles = (args.include_files as string[]) || [];
+        const result = await transferSessionContext({
+          fromTerminal,
+          toTerminal,
+          contextType,
+          summary: summary || undefined,
+          includeFiles: includeFiles.length > 0 ? includeFiles : undefined,
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'match_domain_pattern': {
+        const description = String(args.description || '');
+        const domain = args.domain as string | undefined;
+        if (!description) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ error: 'description is required' }),
+              },
+            ],
+          };
+        }
+        const result = await matchDomainPattern(description, domain);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      // Memory Management tools (MSG-BACKEND-192)
+      case 'memory_health_report': {
+        const report = await getMemoryHealthReport();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(report, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'compress_memory': {
+        const params: CompressMemoryParams = {
+          terminal: String(args.terminal || ''),
+          strategy: (args.strategy as 'aggressive' | 'moderate' | 'conservative') || 'moderate',
+          preserve_sections: (args.preserve_sections as string[]) || undefined,
+          dry_run: args.dry_run !== false, // Default: true
+        };
+        const result = await compressMemory(params);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'extract_patterns': {
+        const params: ExtractPatternsParams = {
+          terminal: String(args.terminal || 'all'),
+          min_frequency: Number(args.min_frequency) || 3,
+          pattern_types: (args.pattern_types as Array<'workflow' | 'decision' | 'error_resolution'>) || [],
+        };
+        const result = await extractPatterns(params);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      // Epic Progress Tracker (MSG-NEXUS-005)
+      case 'get_epic_progress': {
+        const epicId = String(args.epic_id || '');
+        if (!epicId) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ error: 'epic_id is required' }),
+              },
+            ],
+          };
+        }
+        const progress = await getEpicProgress(epicId);
+        if (!progress) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ error: `Epic not found: ${epicId}` }),
+              },
+            ],
+          };
+        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(progress, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_all_epics_progress': {
+        const allProgress = await getAllEpicsProgress();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ epics: allProgress }, null, 2),
+            },
+          ],
+        };
+      }
       // Subscription tools (ADR-052)
       case 'subscribe_to_task':
       case 'subscribe_to_terminal':

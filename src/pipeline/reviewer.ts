@@ -15,6 +15,7 @@ import {
   getReviewAttemptCount,
   type ReviewDecision
 } from './reviewLog';
+import { runPreReviewGate, type ProjectType } from './preReviewGate';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -829,6 +830,77 @@ export async function handleDoneReview(donePath: string): Promise<{ approved: bo
     const doneBase = path.basename(donePath, '.md');
 
     await log(`[Reviewer] Processing ${doneBase}: review_type=${reviewType}, task_type=${taskType}`);
+
+    // MSG-NEXUS-010: Pre-review gate (fast deterministic checks before expensive AI review)
+    const preReviewEnabled = process.env.PRE_REVIEW_ENABLED !== 'false'; // Enabled by default
+
+    if (preReviewEnabled && reviewType !== 'manual') {
+      // Detect project type from terminal or files_changed
+      let projectType: ProjectType | null = null;
+
+      if (doneContent.includes('datahaven-web') || doneContent.includes('client/src') || terminal === 'frontend') {
+        projectType = 'datahaven-web';
+      } else if (doneContent.includes('knowledge-service') || doneContent.includes('spaceos-nexus') || terminal === 'nexus') {
+        projectType = 'knowledge-service';
+      }
+
+      if (projectType) {
+        await log(`[PreReview] Running pre-review gate for: ${projectType}`);
+        const preReviewResult = await runPreReviewGate(projectType);
+
+        if (!preReviewResult.passed) {
+          // Pre-review failed - skip expensive AI review
+          await log(`[PreReview] ❌ FAILED (${preReviewResult.duration_ms}ms): ${preReviewResult.summary}`);
+
+          const failedChecks = preReviewResult.checks
+            .filter(c => !c.passed)
+            .map(c => `- **${c.name}**: ${c.error || 'Failed'}`)
+            .join('\n');
+
+          const rejectContent = `---
+id: ${doneBase}-PREREVIEW-REJECT
+from: reviewer
+to: ${terminal}
+type: blocked
+ref: ${doneBase}
+status: UNREAD
+created: ${new Date().toISOString().split('T')[0]}
+---
+
+# Pre-Review Failed: ${doneBase}
+
+The automated pre-review gate detected issues that must be fixed before AI review.
+
+## Failed Checks
+
+${failedChecks}
+
+## Summary
+
+${preReviewResult.summary}
+
+## Next Steps
+
+1. Fix the failed checks above
+2. Re-submit the DONE outbox message
+3. The pre-review gate will run again automatically
+
+---
+
+**Pre-Review Gate Duration:** ${preReviewResult.duration_ms}ms
+`;
+
+          const rejectPath = path.join(SPACEOS_ROOT, 'terminals', terminal, 'inbox', `${new Date().toISOString().split('T')[0]}_${doneBase}-prereview-reject.md`);
+          await fs.writeFile(rejectPath, rejectContent);
+
+          await telegram(`❌ *${terminal.toUpperCase()} Pre-Review FAILED*\n\`${doneBase}\`\n${failedChecks}`);
+
+          return { approved: false, resultPath: rejectPath, reviewType: 'pre-review' };
+        } else {
+          await log(`[PreReview] ✅ PASSED (${preReviewResult.duration_ms}ms): ${preReviewResult.summary}`);
+        }
+      }
+    }
 
     // Route based on review_type
     if (reviewType === 'manual') {
