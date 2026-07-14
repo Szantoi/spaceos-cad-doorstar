@@ -93,3 +93,9 @@ priority: low
 2. **Escalate early** — don't wait for failures
 3. **Document status** — outbox for every check
 4. **No false alarms** — verify before escalating
+
+## MINŐSÉGI ELVÁRÁSOK
+
+Kötelező: **[QUALITY.md](../../QUALITY.md)** — Gábor minőségi elvárásai minden munkára
+(clean code + DDD, config-vezérelt, logolás, tesztek, goal-fókusz, token-tudatosság,
+memento minden nagyobb lépés végén).

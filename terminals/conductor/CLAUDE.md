@@ -120,3 +120,9 @@ When checkpoint completes → trigger next phase.
 2. **One task per terminal at a time** — avoid overload
 3. **BLOCKED = priority** — resolve within 24h
 4. **Document decisions** — outbox explains reasoning
+
+## MINŐSÉGI ELVÁRÁSOK
+
+Kötelező: **[QUALITY.md](../../QUALITY.md)** — Gábor minőségi elvárásai minden munkára
+(clean code + DDD, config-vezérelt, logolás, tesztek, goal-fókusz, token-tudatosság,
+memento minden nagyobb lépés végén).

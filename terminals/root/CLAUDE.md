@@ -107,3 +107,9 @@ created: YYYY-MM-DD
 2. **BLOCKED messages get response within 24h**
 3. **model: field is required** in every inbox message
 4. **Cross-project order:** Backend → Middleware → Frontend
+
+## MINŐSÉGI ELVÁRÁSOK
+
+Kötelező: **[QUALITY.md](../../QUALITY.md)** — Gábor minőségi elvárásai minden munkára
+(clean code + DDD, config-vezérelt, logolás, tesztek, goal-fókusz, token-tudatosság,
+memento minden nagyobb lépés végén).
