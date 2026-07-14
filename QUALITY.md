@@ -51,3 +51,17 @@
 
 - Stabilitás > új feature; rollback-elhetőség; backup a kockázatos lépések előtt.
 - Runtime-adat, secrets, tokenek, `.env` sosem kerülnek gitre.
+
+## 8. Agent-munka (kutatási tanulságok)
+
+- **Egyszerűség elve:** a legegyszerűbb működő megoldást keressük. Ismert lépéssorra determinisztikus workflow/szkript jár, nem LLM-döntés — az LLM ott dolgozik, ahol tényleg ítélőképesség kell.
+- **Kontextus = véges erőforrás:** az agent teljesítménye romlik, ahogy telik a kontextusa. Tartós állapot fájlban/configban él (goal-config, mailbox); hosszú munkánál checkpoint + friss session (context saturation küszöbök: 30 turn WARNING / 50 CRITICAL).
+- **Készítő ≠ ellenőr:** aki a munkát csinálta, a saját hibáira vak. A verifikációt friss kontextusú, külön agent végzi (reviewer/QA szerep), lehetőleg adverzáriálisan („próbáld megcáfolni, hogy kész").
+- **Földelt visszajelzés:** „kész" = ellenőrizhető bizonyíték (teszt zöld, build fut, health-endpoint válaszol), nem az agent önértékelése.
+- **Erőforrás-keret + eszkaláció:** minden agent-feladatnak van kerete (max próbálkozás / token / idő). Ha elfogy: BLOCKED eszkaláció a koordinátor felé, nem végtelen javítgatási spirál.
+- **Orchestrator–worker minta:** a koordinátor éles határú, egymást át nem fedő feladatokat oszt (cél + kimeneti formátum + korlátok); a worker strukturált eredményt ad vissza, nem prózát.
+- **Tool-ergonómia (ACI):** az agentnek szánt tool egyértelmű nevű, jól dokumentált, félreérthetetlen paraméterű; hibaüzenete megmondja a következő lépést. A rossz tool-leírás ugyanolyan bug, mint a rossz kód.
+- **Emberi kapu:** visszafordíthatatlan vagy kifelé ható lépés (publikálás, törlés, éles deploy) csak emberi jóváhagyással megy.
+- **Eval-korpusz:** a bevált futásokból golden-path korpusz épül; a prompt/skill/workflow változtatásokat ezen mérjük le.
+
+*Forrás: Anthropic agent-kutatások (Building Effective Agents; multi-agent research; context engineering) + saját flotta-tapasztalat.*
