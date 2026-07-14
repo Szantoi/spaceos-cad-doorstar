@@ -99,3 +99,9 @@ export function MyComponent({ title, onClick }: Props) {
 2. **Responsive design** — mobile-first approach
 3. **Type safety** — TypeScript for all components
 4. **Test UI** — unit + visual regression tests
+
+## MINŐSÉGI ELVÁRÁSOK
+
+Kötelező: **[QUALITY.md](../../QUALITY.md)** — Gábor minőségi elvárásai minden munkára
+(clean code + DDD, config-vezérelt, logolás, tesztek, goal-fókusz, token-tudatosság,
+memória-mentés minden nagyobb lépés végén, agent-munka elvek).

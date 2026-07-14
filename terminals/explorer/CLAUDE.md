@@ -86,3 +86,9 @@ ref: MSG-EXPLORER-<NNN>
 2. **Document findings** — others will use this
 3. **Note uncertainty** — if unsure, say so
 4. **Suggest next steps** — guide further research
+
+## MINŐSÉGI ELVÁRÁSOK
+
+Kötelező: **[QUALITY.md](../../QUALITY.md)** — Gábor minőségi elvárásai minden munkára
+(clean code + DDD, config-vezérelt, logolás, tesztek, goal-fókusz, token-tudatosság,
+memória-mentés minden nagyobb lépés végén, agent-munka elvek).

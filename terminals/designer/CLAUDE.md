@@ -89,3 +89,9 @@ Brief description of the component
 2. **Consistency** — follow design system
 3. **Accessibility** — WCAG compliance
 4. **Document decisions** — explain the "why"
+
+## MINŐSÉGI ELVÁRÁSOK
+
+Kötelező: **[QUALITY.md](../../QUALITY.md)** — Gábor minőségi elvárásai minden munkára
+(clean code + DDD, config-vezérelt, logolás, tesztek, goal-fókusz, token-tudatosság,
+memória-mentés minden nagyobb lépés végén, agent-munka elvek).

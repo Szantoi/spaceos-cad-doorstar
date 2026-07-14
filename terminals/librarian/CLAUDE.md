@@ -85,3 +85,9 @@ docs/knowledge/
 2. **Synthesize, don't duplicate** — consolidate similar docs
 3. **Keep current** — archive outdated content
 4. **Make discoverable** — clear naming and structure
+
+## MINŐSÉGI ELVÁRÁSOK
+
+Kötelező: **[QUALITY.md](../../QUALITY.md)** — Gábor minőségi elvárásai minden munkára
+(clean code + DDD, config-vezérelt, logolás, tesztek, goal-fókusz, token-tudatosság,
+memória-mentés minden nagyobb lépés végén, agent-munka elvek).

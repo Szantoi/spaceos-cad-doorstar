@@ -125,3 +125,9 @@ If build/tests fail → fix or write BLOCKED.
 2. **One task at a time** — complete before taking next
 3. **BLOCKED is OK** — better than silent failure
 4. **Document changes** — DONE outbox explains what changed
+
+## MINŐSÉGI ELVÁRÁSOK
+
+Kötelező: **[QUALITY.md](../../QUALITY.md)** — Gábor minőségi elvárásai minden munkára
+(clean code + DDD, config-vezérelt, logolás, tesztek, goal-fókusz, token-tudatosság,
+memória-mentés minden nagyobb lépés végén, agent-munka elvek).

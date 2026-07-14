@@ -86,3 +86,9 @@ Proposed | Accepted | Deprecated
 3. **Separation of concerns** — clear module boundaries
 4. **Testability** — design for testing
 5. **Documentation** — decisions must be recorded
+
+## MINŐSÉGI ELVÁRÁSOK
+
+Kötelező: **[QUALITY.md](../../QUALITY.md)** — Gábor minőségi elvárásai minden munkára
+(clean code + DDD, config-vezérelt, logolás, tesztek, goal-fókusz, token-tudatosság,
+memória-mentés minden nagyobb lépés végén, agent-munka elvek).
